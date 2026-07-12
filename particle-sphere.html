@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Particle Sphere · Gesture Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#07080a;
+    --ivory:#eae5d8;
+    --muted:#888c96;
+    --hair:rgba(234,229,216,0.12);
+    --hair-soft:rgba(234,229,216,0.06);
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;padding:0;width:100%;height:100%;
+    background:var(--bg);
+    overflow:hidden;
+    font-family:'JetBrains Mono',monospace;
+    color:var(--ivory);
+  }
+
+  #bg-video{
+    position:fixed;inset:0;width:100%;height:100%;
+    object-fit:cover;
+    transform:scaleX(-1);
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .5s ease;
+    z-index:0;
+  }
+  #bg-video.on{opacity:0.55;}
+  #video-tint{
+    position:fixed;inset:0;z-index:1;
+    background:radial-gradient(ellipse at center, rgba(7,8,10,0.15) 0%, rgba(7,8,10,0.75) 100%);
+    opacity:0;transition:opacity .5s ease;pointer-events:none;
+  }
+  #video-tint.on{opacity:1;}
+
+  #scene-container{
+    position:fixed;inset:0;z-index:2;
+  }
+  #scene-container canvas{display:block;}
+
+  .ui{position:fixed;z-index:5;pointer-events:none;}
+
+  .title{
+    top:34px;left:38px;
+  }
+  .title h1{
+    font-family:'Cormorant Garamond', serif;
+    font-weight:500;
+    font-size:34px;
+    letter-spacing:0.5px;
+    margin:0;
+    color:var(--ivory);
+    line-height:1;
+  }
+  .title .sub{
+    margin-top:8px;
+    font-size:10px;
+    letter-spacing:3px;
+    text-transform:uppercase;
+    color:var(--muted);
+  }
+
+  .hint{
+    left:38px;bottom:32px;
+    font-size:10.5px;
+    line-height:1.9;
+    color:var(--muted);
+    letter-spacing:0.3px;
+    max-width:340px;
+  }
+  .hint b{color:var(--ivory);font-weight:500;}
+
+  .panel{
+    top:34px;right:38px;
+    display:flex;flex-direction:column;
+    align-items:flex-end;
+    gap:14px;
+    pointer-events:auto;
+  }
+
+  .status{
+    text-align:right;
+    font-size:10px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:var(--muted);
+  }
+  .status .hand-line{margin-bottom:8px;color:var(--ivory);font-size:11px;letter-spacing:1.5px;}
+
+  .dots{display:flex;gap:6px;margin-top:8px;justify-content:flex-end;}
+  .dot{
+    width:6px;height:6px;border-radius:50%;
+    border:1px solid var(--hair);
+    background:transparent;
+    transition:background .25s ease, border-color .25s ease, transform .25s ease;
+  }
+  .dot.filled{
+    background:var(--accent, #cfcabf);
+    border-color:var(--accent, #cfcabf);
+    transform:scale(1.15);
+  }
+
+  .cam-btn{
+    pointer-events:auto;
+    background:transparent;
+    border:1px solid var(--hair);
+    color:var(--ivory);
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    padding:10px 16px;
+    cursor:pointer;
+    transition:border-color .2s ease, background .2s ease;
+  }
+  .cam-btn:hover{border-color:var(--ivory);background:var(--hair-soft);}
+  .cam-btn:focus-visible{outline:1px solid var(--ivory);outline-offset:2px;}
+  .cam-btn .dim{color:var(--muted);}
+
+  .permission-msg{
+    top:50%;left:50%;transform:translate(-50%,-50%);
+    text-align:center;
+    font-size:11px;letter-spacing:1px;
+    color:var(--muted);
+    max-width:320px;
+    display:none;
+  }
+  .permission-msg.show{display:block;}
+
+  /* charge ring */
+  .charge-wrap{
+    bottom:70px;left:50%;transform:translateX(-50%);
+    display:flex;flex-direction:column;align-items:center;gap:10px;
+    opacity:0;transition:opacity .25s ease;
+  }
+  .charge-wrap.show{opacity:1;}
+  .charge-label{
+    font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(--muted);
+  }
+  .charge-label span{color:var(--ivory);}
+
+  footer.brand{
+    bottom:32px;right:38px;
+    font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);
+    opacity:0.6;
+  }
+
+  @media (max-width:640px){
+    .title h1{font-size:26px;}
+    .hint{max-width:230px;font-size:9.5px;}
+    footer.brand{display:none;}
+  }
+</style>
+</head>
+<body>
+
+<video id="bg-video" autoplay muted playsinline></video>
+<div id="video-tint"></div>
+<div id="scene-container"></div>
+
+<div class="ui title">
+  <h1>Particle&nbsp;Sphere</h1>
+  <div class="sub">Gesture&nbsp;Driven&nbsp;/&nbsp;3000&nbsp;Points</div>
+</div>
+
+<div class="ui hint">
+  <b>One hand</b> — move &amp; rotate the sphere<br>
+  <b>Pinch &amp; hold</b> — charge, release to explode<br>
+  <b>Two hands</b> — spread to grow, close to shrink<br>
+  <b>Finger count</b> — shifts particle colour
+</div>
+
+<div class="ui panel">
+  <div class="status">
+    <div class="hand-line" id="hand-line">no hand detected</div>
+    <div>fingers</div>
+    <div class="dots" id="finger-dots">
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    </div>
+  </div>
+  <button class="cam-btn" id="cam-btn">Camera&nbsp;<span class="dim">/&nbsp;off</span></button>
+</div>
+
+<div class="ui charge-wrap" id="charge-wrap">
+  <svg width="56" height="56" viewBox="0 0 56 56">
+    <circle cx="28" cy="28" r="24" fill="none" stroke="var(--hair)" stroke-width="1.5"/>
+    <circle id="charge-ring" cx="28" cy="28" r="24" fill="none" stroke="var(--ivory)" stroke-width="1.5"
+      stroke-dasharray="150.8" stroke-dashoffset="150.8" stroke-linecap="round"
+      transform="rotate(-90 28 28)"/>
+  </svg>
+  <div class="charge-label">charge <span id="charge-pct">0%</span></div>
+</div>
+
+<div class="ui permission-msg" id="permission-msg">
+  Waiting for camera access.<br>Allow the webcam to begin gesture control.
+</div>
+
+<footer class="ui brand">no frameworks · webcam only</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+
+<script>
+(function(){
+
+/* ---------------------------------------------------------------
+   CONFIG
+--------------------------------------------------------------- */
+const PARTICLE_COUNT = 3000;
+const BASE_RADIUS = 2.0;
+const MIN_SCALE = 0.55;
+const MAX_SCALE = 2.1;
+const CHARGE_DURATION = 1.15; // seconds to full charge
+const EXPLODE_DURATION = 0.85;
+const REFORM_LERP = 0.055;
+
+const PALETTE = [
+  [0x7E,0xA6,0xC9], // 0 fingers - mist blue
+  [0xB4,0x8C,0xF2], // 1 - violet
+  [0xF2,0xA6,0x5A], // 2 - amber
+  [0xF2,0x7F,0x94], // 3 - rose
+  [0x63,0xD9,0xB0], // 4 - emerald
+  [0xF5,0xD9,0x8B], // 5 - champagne gold
+];
+const IDLE_COLOR = [0x9A,0xA0,0xAE];
+
+function paletteHexAt(i){
+  const c = PALETTE[i] || IDLE_COLOR;
+  return (c[0]<<16)|(c[1]<<8)|c[2];
+}
+
+/* ---------------------------------------------------------------
+   THREE.JS SETUP
+--------------------------------------------------------------- */
+const container = document.getElementById('scene-container');
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 100);
+camera.position.set(0,0,6.4);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+container.appendChild(renderer.domElement);
+
+window.addEventListener('resize', ()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// group that we rotate / translate / scale
+const group = new THREE.Group();
+scene.add(group);
+
+/* Fibonacci sphere base positions */
+const basePositions = new Float32Array(PARTICLE_COUNT*3);
+(function buildSphere(){
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  for(let i=0;i<PARTICLE_COUNT;i++){
+    const y = 1 - (i/(PARTICLE_COUNT-1))*2;
+    const radiusAtY = Math.sqrt(1-y*y);
+    const theta = golden*i;
+    const x = Math.cos(theta)*radiusAtY;
+    const z = Math.sin(theta)*radiusAtY;
+    basePositions[i*3]   = x*BASE_RADIUS;
+    basePositions[i*3+1] = y*BASE_RADIUS;
+    basePositions[i*3+2] = z*BASE_RADIUS;
+  }
+})();
+
+const currentPositions = new Float32Array(basePositions); // start at rest
+const velocities = new Float32Array(PARTICLE_COUNT*3);
+const colors = new Float32Array(PARTICLE_COUNT*3);
+const colorTargets = new Float32Array(PARTICLE_COUNT*3);
+
+const tmpColor = new THREE.Color(paletteHexAt(-1) || (IDLE_COLOR[0]<<16)|(IDLE_COLOR[1]<<8)|IDLE_COLOR[2]);
+for(let i=0;i<PARTICLE_COUNT;i++){
+  colors[i*3]=tmpColor.r; colors[i*3+1]=tmpColor.g; colors[i*3+2]=tmpColor.b;
+  colorTargets[i*3]=tmpColor.r; colorTargets[i*3+1]=tmpColor.g; colorTargets[i*3+2]=tmpColor.b;
+}
+
+const geometry = new THREE.BufferGeometry();
+geometry.setAttribute('position', new THREE.BufferAttribute(currentPositions, 3));
+geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+const material = new THREE.PointsMaterial({
+  size: 0.045,
+  vertexColors: true,
+  transparent: true,
+  opacity: 0.92,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  sizeAttenuation: true,
+});
+
+const points = new THREE.Points(geometry, material);
+group.add(points);
+
+/* faint inner core glow for depth */
+const coreGeo = new THREE.SphereGeometry(0.35, 24, 24);
+const coreMat = new THREE.MeshBasicMaterial({ color: 0x9aa0ae, transparent:true, opacity:0.05 });
+const core = new THREE.Mesh(coreGeo, coreMat);
+group.add(core);
+
+/* ---------------------------------------------------------------
+   STATE
+--------------------------------------------------------------- */
+let radiusScale = 1.0;        // current sphere scale
+let targetRadiusScale = 1.0;
+let groupTargetPos = new THREE.Vector3(0,0,0);
+let rotVelocity = {x:0,y:0};
+let handsPresent = 0;
+let fingerCount = -1;         // -1 = unknown / no hand
+let displayedFingerCount = -1;
+
+let pinching = false;
+let chargeTime = 0;
+let particleState = 'idle';   // idle | exploding | reforming
+let explodeTimer = 0;
+let explodeIntensity = 0.5;
+
+let lastHandUpdate = performance.now();
+let ambientT = 0;
+
+/* smoothing targets fed by mediapipe, read by render loop */
+const handTarget = {
+  active:false,
+  x:0.5, y:0.5,          // normalized position (mirrored)
+  spread:null,           // normalized distance between two hands, or null
+};
+
+/* ---------------------------------------------------------------
+   UI ELEMENTS
+--------------------------------------------------------------- */
+const handLineEl = document.getElementById('hand-line');
+const dotsEl = document.querySelectorAll('#finger-dots .dot');
+const chargeWrap = document.getElementById('charge-wrap');
+const chargeRing = document.getElementById('charge-ring');
+const chargePct = document.getElementById('charge-pct');
+const CIRC = 150.8;
+
+function setAccentVar(hex){
+  const c = '#' + hex.toString(16).padStart(6,'0');
+  document.documentElement.style.setProperty('--accent', c);
+}
+
+function updateFingerDots(count){
+  dotsEl.forEach((d,i)=>{
+    d.classList.toggle('filled', count>=0 && i < count);
+  });
+}
+
+/* ---------------------------------------------------------------
+   COLOR TARGET UPDATE
+--------------------------------------------------------------- */
+function setColorTarget(hex){
+  const c = new THREE.Color(hex);
+  for(let i=0;i<PARTICLE_COUNT;i++){
+    colorTargets[i*3]=c.r; colorTargets[i*3+1]=c.g; colorTargets[i*3+2]=c.b;
+  }
+  setAccentVar(hex);
+}
+setColorTarget((IDLE_COLOR[0]<<16)|(IDLE_COLOR[1]<<8)|IDLE_COLOR[2]);
+
+/* ---------------------------------------------------------------
+   EXPLODE / REFORM
+--------------------------------------------------------------- */
+function triggerExplode(intensity){
+  particleState = 'exploding';
+  explodeTimer = 0;
+  explodeIntensity = 0.35 + intensity*0.9;
+  for(let i=0;i<PARTICLE_COUNT;i++){
+    const dx = (Math.random()-0.5);
+    const dy = (Math.random()-0.5);
+    const dz = (Math.random()-0.5);
+    const len = Math.sqrt(dx*dx+dy*dy+dz*dz) || 1;
+    // bias direction outward from current position too, for a natural burst
+    const px = currentPositions[i*3], py = currentPositions[i*3+1], pz = currentPositions[i*3+2];
+    const plen = Math.sqrt(px*px+py*py+pz*pz) || 1;
+    const speed = (4 + Math.random()*7) * explodeIntensity;
+    velocities[i*3]   = (dx/len*0.6 + px/plen*0.4) * speed;
+    velocities[i*3+1] = (dy/len*0.6 + py/plen*0.4) * speed;
+    velocities[i*3+2] = (dz/len*0.6 + pz/plen*0.4) * speed;
+  }
+}
+
+/* ---------------------------------------------------------------
+   MEDIAPIPE HANDS
+--------------------------------------------------------------- */
+const videoEl = document.getElementById('bg-video');
+const permMsg = document.getElementById('permission-msg');
+
+function dist2(a,b){
+  const dx=a.x-b.x, dy=a.y-b.y;
+  return Math.sqrt(dx*dx+dy*dy);
+}
+
+function countFingers(lm){
+  let count = 0;
+  // index, middle, ring, pinky: tip above pip (smaller y) => extended
+  const pairs = [[8,6],[12,10],[16,14],[20,18]];
+  pairs.forEach(([tip,pip])=>{
+    if(lm[tip].y < lm[pip].y - 0.02) count++;
+  });
+  // thumb: compare distance of tip vs ip from pinky-mcp (17), robust to hand side
+  const dTip = dist2(lm[4], lm[17]);
+  const dIp  = dist2(lm[3], lm[17]);
+  if(dTip > dIp + 0.02) count++;
+  return count;
+}
+
+function isPinching(lm){
+  const pinchDist = dist2(lm[4], lm[8]);
+  const palmSize = dist2(lm[0], lm[9]) || 0.001;
+  return (pinchDist/palmSize) < 0.42;
+}
+
+let fingerVoteBuffer = [];
+function stableFingerCount(raw){
+  fingerVoteBuffer.push(raw);
+  if(fingerVoteBuffer.length>6) fingerVoteBuffer.shift();
+  // majority vote
+  const counts = {};
+  fingerVoteBuffer.forEach(v=> counts[v]=(counts[v]||0)+1 );
+  let best=raw, bestN=0;
+  Object.keys(counts).forEach(k=>{ if(counts[k]>bestN){bestN=counts[k]; best=parseInt(k);} });
+  return best;
+}
+
+let pinchWasActive = false;
+
+function onResults(results){
+  lastHandUpdate = performance.now();
+  const list = results.multiHandLandmarks || [];
+  handsPresent = list.length;
+
+  if(handsPresent === 0){
+    handTarget.active = false;
+    handTarget.spread = null;
+    if(pinchWasActive){
+      // released while hand disappeared: treat as release with current charge
+      triggerExplode(chargeTime/CHARGE_DURATION);
+      pinchWasActive = false;
+    }
+    pinching = false;
+    chargeTime = 0;
+    handLineEl.textContent = 'no hand detected';
+    fingerCount = -1;
+    updateFingerDots(-1);
+    return;
+  }
+
+  // mirrored x for natural control (video is mirrored via CSS)
+  const primary = list[0];
+  const mx = 1 - primary[9].x; // palm center landmark
+  const my = primary[9].y;
+
+  handTarget.active = true;
+
+  if(handsPresent === 2){
+    const secondary = list[1];
+    const mx2 = 1 - secondary[9].x;
+    const my2 = secondary[9].y;
+    handTarget.x = (mx+mx2)/2;
+    handTarget.y = (my+my2)/2;
+    const dx = mx-mx2, dy = my-my2;
+    handTarget.spread = Math.sqrt(dx*dx+dy*dy);
+    handLineEl.textContent = '2 hands · resize';
+  } else {
+    handTarget.x = mx;
+    handTarget.y = my;
+    handTarget.spread = null;
+    handLineEl.textContent = '1 hand · move & rotate';
+  }
+
+  // finger count + color from primary hand
+  const rawCount = countFingers(primary);
+  fingerCount = stableFingerCount(rawCount);
+  if(fingerCount !== displayedFingerCount){
+    displayedFingerCount = fingerCount;
+    updateFingerDots(fingerCount);
+    setColorTarget(paletteHexAt(fingerCount));
+  }
+
+  // pinch on primary hand
+  const nowPinching = isPinching(primary);
+  pinching = nowPinching;
+  if(nowPinching){
+    pinchWasActive = true;
+  } else if(pinchWasActive){
+    triggerExplode(chargeTime/CHARGE_DURATION);
+    pinchWasActive = false;
+    chargeTime = 0;
+  }
+}
+
+let handsReady = false;
+try{
+  const hands = new Hands({
+    locateFile: (file)=> `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+  });
+  hands.setOptions({
+    maxNumHands: 2,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.65,
+    minTrackingConfidence: 0.6
+  });
+  hands.onResults(onResults);
+
+  const mpCamera = new Camera(videoEl, {
+    onFrame: async ()=>{ await hands.send({image: videoEl}); },
+    width: 640,
+    height: 480
+  });
+  mpCamera.start().then(()=>{
+    handsReady = true;
+    permMsg.classList.remove('show');
+  }).catch(err=>{
+    permMsg.classList.add('show');
+    permMsg.innerHTML = 'Camera access was blocked.<br>Allow webcam permissions and reload.';
+    console.error(err);
+  });
+} catch(e){
+  permMsg.classList.add('show');
+  permMsg.innerHTML = 'Could not start hand tracking.<br>' + (e.message||'');
+  console.error(e);
+}
+
+// show waiting message until first results arrive
+permMsg.classList.add('show');
+setTimeout(()=>{ if(!handsReady) permMsg.classList.add('show'); }, 300);
+
+/* ---------------------------------------------------------------
+   CAMERA BACKGROUND TOGGLE
+--------------------------------------------------------------- */
+const camBtn = document.getElementById('cam-btn');
+const videoTint = document.getElementById('video-tint');
+let camVisible = false;
+camBtn.addEventListener('click', ()=>{
+  camVisible = !camVisible;
+  videoEl.classList.toggle('on', camVisible);
+  videoTint.classList.toggle('on', camVisible);
+  camBtn.innerHTML = camVisible ? 'Camera <span class="dim">/ on</span>' : 'Camera <span class="dim">/ off</span>';
+});
+
+/* ---------------------------------------------------------------
+   MAIN RENDER LOOP
+--------------------------------------------------------------- */
+let prevTime = performance.now();
+
+function animate(){
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  let dt = (now - prevTime)/1000;
+  dt = Math.min(dt, 0.05);
+  prevTime = now;
+  ambientT += dt;
+
+  const timeSinceHand = now - lastHandUpdate;
+  const staleHand = timeSinceHand > 600; // no fresh mediapipe result recently
+
+  /* --- position & rotation from hand --- */
+  if(handTarget.active && !staleHand){
+    const nx = (handTarget.x - 0.5);
+    const ny = (handTarget.y - 0.5);
+    groupTargetPos.set(nx*5.2, -ny*3.4, 0);
+    rotVelocity.y = nx * 1.6;
+    rotVelocity.x = ny * 1.1;
+  } else {
+    groupTargetPos.set(0,0,0);
+    rotVelocity.x *= 0.9;
+    rotVelocity.y = rotVelocity.y*0.9 + 0.05; // gentle idle spin
+  }
+  group.position.lerp(groupTargetPos, 0.06);
+  group.rotation.y += rotVelocity.y * dt;
+  group.rotation.x += rotVelocity.x * dt;
+  group.rotation.x = Math.max(-0.9, Math.min(0.9, group.rotation.x));
+
+  /* --- two-hand spread controls scale --- */
+  if(handTarget.spread !== null){
+    const mapped = MIN_SCALE + Math.min(Math.max((handTarget.spread-0.08)/0.55,0),1) * (MAX_SCALE-MIN_SCALE);
+    targetRadiusScale = mapped;
+  }
+  radiusScale += (targetRadiusScale - radiusScale) * 0.08;
+  group.scale.setScalar(radiusScale);
+
+  /* --- pinch / charge state --- */
+  if(pinching && particleState === 'idle'){
+    chargeTime = Math.min(chargeTime + dt, CHARGE_DURATION);
+    const ratio = chargeTime/CHARGE_DURATION;
+    chargeWrap.classList.add('show');
+    chargeRing.setAttribute('stroke-dashoffset', (CIRC*(1-ratio)).toFixed(2));
+    chargePct.textContent = Math.round(ratio*100)+'%';
+  } else if(!pinching){
+    chargeWrap.classList.remove('show');
+    if(particleState==='idle'){
+      chargeRing.setAttribute('stroke-dashoffset', CIRC.toFixed(2));
+      chargePct.textContent = '0%';
+    }
+  }
+
+  /* --- particle physics --- */
+  if(particleState === 'exploding'){
+    explodeTimer += dt;
+    for(let i=0;i<PARTICLE_COUNT;i++){
+      currentPositions[i*3]   += velocities[i*3]*dt;
+      currentPositions[i*3+1] += velocities[i*3+1]*dt;
+      currentPositions[i*3+2] += velocities[i*3+2]*dt;
+      velocities[i*3]   *= 0.985;
+      velocities[i*3+1] *= 0.985;
+      velocities[i*3+2] *= 0.985;
+    }
+    if(explodeTimer > EXPLODE_DURATION){
+      particleState = 'reforming';
+    }
+  } else if(particleState === 'reforming'){
+    let maxDist = 0;
+    for(let i=0;i<PARTICLE_COUNT;i++){
+      const tx = basePositions[i*3], ty = basePositions[i*3+1], tz = basePositions[i*3+2];
+      const cx = currentPositions[i*3], cy = currentPositions[i*3+1], cz = currentPositions[i*3+2];
+      currentPositions[i*3]   = cx + (tx-cx)*REFORM_LERP;
+      currentPositions[i*3+1] = cy + (ty-cy)*REFORM_LERP;
+      currentPositions[i*3+2] = cz + (tz-cz)*REFORM_LERP;
+      const dx = tx-currentPositions[i*3], dy=ty-currentPositions[i*3+1], dz=tz-currentPositions[i*3+2];
+      const d = dx*dx+dy*dy+dz*dz;
+      if(d>maxDist) maxDist = d;
+    }
+    if(maxDist < 0.0006){
+      particleState = 'idle';
+      currentPositions.set(basePositions);
+    }
+  } else {
+    // idle: subtle organic shimmer
+    for(let i=0;i<PARTICLE_COUNT;i++){
+      const bx = basePositions[i*3], by = basePositions[i*3+1], bz = basePositions[i*3+2];
+      const n = Math.sin(ambientT*0.6 + i*0.37) * 0.012;
+      currentPositions[i*3]   = bx * (1+n);
+      currentPositions[i*3+1] = by * (1+n);
+      currentPositions[i*3+2] = bz * (1+n);
+    }
+  }
+  geometry.attributes.position.needsUpdate = true;
+
+  /* --- color lerp --- */
+  let colorChanged = false;
+  for(let i=0;i<PARTICLE_COUNT;i++){
+    const idx = i*3;
+    for(let k=0;k<3;k++){
+      const diff = colorTargets[idx+k]-colors[idx+k];
+      if(Math.abs(diff) > 0.0008){
+        colors[idx+k] += diff*0.08;
+        colorChanged = true;
+      }
+    }
+  }
+  if(colorChanged) geometry.attributes.color.needsUpdate = true;
+
+  renderer.render(scene, camera);
+}
+animate();
+
+})();
+</script>
+</body>
+</html>
